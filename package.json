@@ -37,6 +37,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/better-sqlite3": "^7.6.12",
+    "@types/highlight.js": "^10.1.0",
     "@types/jest": "^29.5.14",
     "@types/prismjs": "^1.26.5",
     "@types/react": "^18.2.64",

@@ -8,7 +8,7 @@ import { Box, Paper } from '@mui/material';
 import TipTapEditor from './TipTapEditor';
 import Toolbar from './Toolbar';
 import MarkdownToolbar from './MarkdownToolbar';
-import { useEditor } from '@tiptap/react';
+import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
@@ -26,7 +26,9 @@ const Editor: React.FC = () => {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        codeBlock: false, // Disable default code block to avoid conflicts
+      }),
       Placeholder.configure({
         placeholder: 'ノートを入力してください...',
       }),
@@ -99,11 +101,17 @@ const Editor: React.FC = () => {
       <Paper elevation={0} sx={{ height: '100%', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
         <Toolbar editor={editor} />
         <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-          <TipTapEditor
-            content={content}
-            onChange={setContent}
-            readOnly={!selectedNoteId}
-          />
+          <Box sx={{ p: 2, height: '100%' }}>
+            {editor && (
+              <EditorContent
+                editor={editor}
+                style={{
+                  minHeight: '100%',
+                  padding: '0.5rem',
+                }}
+              />
+            )}
+          </Box>
         </Box>
       </Paper>
     </Box>

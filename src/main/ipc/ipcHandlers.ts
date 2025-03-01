@@ -15,27 +15,68 @@ export function setupIpcHandlers(): void {
   // ノート関連のハンドラー
   ipcMain.handle('notes:getAll', async () => {
     try {
-      return noteRepository.findAll();
+      console.log('ipcHandlers: Getting all notes');
+      const notes = noteRepository.findAll();
+      console.log('ipcHandlers: Got notes:', notes);
+      return notes;
     } catch (error) {
       console.error('Error getting all notes:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       throw error;
     }
   });
   
   ipcMain.handle('notes:getById', async (_, id: string) => {
     try {
-      return noteRepository.findById(id);
+      console.log(`ipcHandlers: Getting note by id ${id}`);
+      const note = noteRepository.findById(id);
+      console.log('ipcHandlers: Got note:', note);
+      return note;
     } catch (error) {
       console.error(`Error getting note by id ${id}:`, error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       throw error;
     }
   });
   
   ipcMain.handle('notes:create', async (_, note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      return noteRepository.create(note);
+      console.log('ipcHandlers: Creating note:', note);
+      
+      // Validate note object
+      if (!note) {
+        throw new Error('Note object is undefined or null');
+      }
+      
+      if (!note.title) {
+        throw new Error('Note title is required');
+      }
+      
+      if (note.content === undefined) {
+        note.content = '';
+      }
+      
+      if (!note.tags) {
+        note.tags = [];
+      }
+      
+      console.log('ipcHandlers: Validated note:', note);
+      
+      const createdNote = noteRepository.create(note);
+      console.log('ipcHandlers: Note created:', createdNote);
+      return createdNote;
     } catch (error) {
       console.error('Error creating note:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       throw error;
     }
   });

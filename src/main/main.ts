@@ -57,11 +57,19 @@ function createWindow() {
 
 // Initialize the database and set up IPC handlers
 function initialize() {
-  // Initialize database
-  dbManager = DatabaseManager.getInstance();
-  
-  // Set up IPC handlers
-  setupIpcHandlers();
+  try {
+    console.log('Initializing database...');
+    // Initialize database
+    dbManager = DatabaseManager.getInstance();
+    console.log('Database initialized successfully');
+    
+    console.log('Setting up IPC handlers...');
+    // Set up IPC handlers
+    setupIpcHandlers();
+    console.log('IPC handlers set up successfully');
+  } catch (error) {
+    console.error('Error during initialization:', error);
+  }
 }
 
 // Quit when all windows are closed, except on macOS. There, it's common
