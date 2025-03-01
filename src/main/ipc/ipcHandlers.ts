@@ -112,4 +112,76 @@ export function setupIpcHandlers(): void {
       throw error;
     }
   });
+  
+  ipcMain.handle('notes:importMarkdown', async () => {
+    try {
+      const { filePaths } = await dialog.showOpenDialog({
+        title: 'Import Markdown',
+        filters: [{ name: 'Markdown Files', extensions: ['md'] }],
+        properties: ['openFile', 'multiSelections'],
+      });
+      
+      if (filePaths.length === 0) return [];
+      
+      const importedNotes: Note[] = [];
+      const fs = require('fs');
+      const path = require('path');
+      const { markdownToHtml } = require('../../renderer/utils/markdownUtils');
+      
+      for (const filePath of filePaths) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const fileName = path.basename(filePath, '.md');
+        
+        // Markdownをリッチテキストに変換
+        const htmlContent = markdownToHtml(content);
+        
+        const note = noteRepository.create({
+          title: fileName,
+          content: htmlContent,
+          tags: ['imported'],
+        });
+        
+        importedNotes.push(note);
+      }
+      
+      return importedNotes;
+    } catch (error) {
+      console.error('Error importing markdown:', error);
+      throw error;
+    }
+  });
+  
+  ipcMain.handle('notes:uploadImage', async () => {
+    try {
+      const { app } = require('electron');
+      const fs = require('fs');
+      const path = require('path');
+      
+      const { filePaths } = await dialog.showOpenDialog({
+        title: 'Upload Image',
+        filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'svg'] }],
+        properties: ['openFile'],
+      });
+      
+      if (filePaths.length === 0) return null;
+      
+      const filePath = filePaths[0];
+      const fileName = path.basename(filePath);
+      
+      // アプリケーションのデータディレクトリに画像をコピー
+      const imagesDir = path.join(app.getPath('userData'), 'images');
+      await fs.promises.mkdir(imagesDir, { recursive: true });
+      
+      const destPath = path.join(imagesDir, fileName);
+      await fs.promises.copyFile(filePath, destPath);
+      
+      return {
+        filePath: `file://${destPath}`,
+        fileName,
+      };
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error;
+    }
+  });
 }

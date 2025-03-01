@@ -12,7 +12,14 @@ export default defineConfig({
       entry: [
         'src/main/main.ts',
         'src/preload/preload.ts'
-      ]
+      ],
+      vite: {
+        build: {
+          rollupOptions: {
+            external: ['better-sqlite3']
+          }
+        }
+      }
     }),
     renderer()
   ],

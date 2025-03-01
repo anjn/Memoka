@@ -37,4 +37,8 @@ export class NoteService {
   public static async exportNoteAsMarkdown(note: Note): Promise<boolean> {
     return window.ipcRenderer.invoke('notes:exportAsMarkdown', note);
   }
+  
+  public static async importMarkdown(): Promise<Note[]> {
+    return window.ipcRenderer.invoke('notes:importMarkdown');
+  }
 }
