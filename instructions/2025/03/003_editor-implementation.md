@@ -16,8 +16,8 @@ Memoka（メモカ）プロジェクトのマイルストーンM3「エディタ
 
 ## 技術スタック
 
-- **リッチテキストエディタ**: Slate.js
-- **マークダウン変換**: remark
+- **リッチテキストエディタ**: TipTap（ProseMirror ベース）
+- **マークダウン変換**: markdown-it
 - **シンタックスハイライト**: Prism.js
 - **画像管理**: Electron APIとファイルシステム
 - **自動保存**: Zustand + Electron IPC
@@ -26,99 +26,73 @@ Memoka（メモカ）プロジェクトのマイルストーンM3「エディタ
 
 ### 1. リッチテキストエディタの統合
 
-1. Slate.jsとその関連パッケージをインストールします。
+1. TipTapとその関連パッケージをインストールします。
 
 ```bash
-npm install slate slate-react slate-history
+npm install @tiptap/react @tiptap/pm @tiptap/starter-kit @tiptap/extension-placeholder @tiptap/extension-image @tiptap/extension-link @tiptap/extension-code-block-lowlight
 ```
 
 2. 基本的なエディタコンポーネントを作成します。
 
 ```typescript
-// src/renderer/components/Editor/SlateEditor.tsx
-import React, { useMemo, useCallback } from 'react';
-import { createEditor, Descendant } from 'slate';
-import { Slate, Editable, withReact } from 'slate-react';
-import { withHistory } from 'slate-history';
+// src/renderer/components/Editor/TipTapEditor.tsx
+import React, { useEffect } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import Image from '@tiptap/extension-image';
+import Link from '@tiptap/extension-link';
 import { Box } from '@mui/material';
 
-interface SlateEditorProps {
-  initialValue: Descendant[];
-  onChange: (value: Descendant[]) => void;
+interface TipTapEditorProps {
+  content: string;
+  onChange: (content: string) => void;
   readOnly?: boolean;
 }
 
-const SlateEditor: React.FC<SlateEditorProps> = ({
-  initialValue,
+const TipTapEditor: React.FC<TipTapEditorProps> = ({
+  content,
   onChange,
   readOnly = false,
 }) => {
-  const editor = useMemo(() => withHistory(withReact(createEditor())), []);
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'ノートを入力してください...',
+      }),
+      Image,
+      Link.configure({
+        openOnClick: true,
+      }),
+    ],
+    content,
+    editable: !readOnly,
+    onUpdate: ({ editor }) => {
+      onChange(editor.getHTML());
+    },
+  });
 
-  const renderElement = useCallback(({ attributes, children, element }) => {
-    switch (element.type) {
-      case 'paragraph':
-        return <p {...attributes}>{children}</p>;
-      case 'heading-one':
-        return <h1 {...attributes}>{children}</h1>;
-      case 'heading-two':
-        return <h2 {...attributes}>{children}</h2>;
-      case 'heading-three':
-        return <h3 {...attributes}>{children}</h3>;
-      case 'block-quote':
-        return <blockquote {...attributes}>{children}</blockquote>;
-      case 'bulleted-list':
-        return <ul {...attributes}>{children}</ul>;
-      case 'numbered-list':
-        return <ol {...attributes}>{children}</ol>;
-      case 'list-item':
-        return <li {...attributes}>{children}</li>;
-      default:
-        return <p {...attributes}>{children}</p>;
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content);
     }
-  }, []);
-
-  const renderLeaf = useCallback(({ attributes, children, leaf }) => {
-    let el = <>{children}</>;
-    
-    if (leaf.bold) {
-      el = <strong>{el}</strong>;
-    }
-    
-    if (leaf.italic) {
-      el = <em>{el}</em>;
-    }
-    
-    if (leaf.underline) {
-      el = <u>{el}</u>;
-    }
-    
-    if (leaf.code) {
-      el = <code>{el}</code>;
-    }
-    
-    return <span {...attributes}>{el}</span>;
-  }, []);
+  }, [content, editor]);
 
   return (
     <Box sx={{ p: 2, height: '100%' }}>
-      <Slate editor={editor} value={initialValue} onChange={onChange}>
-        <Editable
-          readOnly={readOnly}
-          renderElement={renderElement}
-          renderLeaf={renderLeaf}
-          placeholder="ノートを入力してください..."
-          style={{
-            minHeight: '100%',
-            padding: '0.5rem',
-          }}
-        />
-      </Slate>
+      <EditorContent
+        editor={editor}
+        style={{
+          minHeight: '100%',
+          padding: '0.5rem',
+        }}
+      />
     </Box>
   );
 };
 
-export default SlateEditor;
+export default TipTapEditor;
 ```
 
 3. エディタのツールバーを作成します。
@@ -126,8 +100,7 @@ export default SlateEditor;
 ```typescript
 // src/renderer/components/Editor/Toolbar.tsx
 import React from 'react';
-import { useSlate } from 'slate-react';
-import { Editor, Transforms, Element as SlateElement } from 'slate';
+import { Editor } from '@tiptap/react';
 import {
   Box,
   Divider,
@@ -147,60 +120,22 @@ import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
 import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered';
 
-const isBlockActive = (editor, format) => {
-  const [match] = Editor.nodes(editor, {
-    match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === format,
-  });
-  return !!match;
-};
+interface ToolbarProps {
+  editor: Editor | null;
+}
 
-const isMarkActive = (editor, format) => {
-  const marks = Editor.marks(editor);
-  return marks ? marks[format] === true : false;
-};
-
-const toggleBlock = (editor, format) => {
-  const isActive = isBlockActive(editor, format);
-  const isList = ['numbered-list', 'bulleted-list'].includes(format);
-
-  Transforms.unwrapNodes(editor, {
-    match: n =>
-      !Editor.isEditor(n) &&
-      SlateElement.isElement(n) &&
-      ['numbered-list', 'bulleted-list'].includes(n.type),
-    split: true,
-  });
-
-  const newProperties: Partial<SlateElement> = {
-    type: isActive ? 'paragraph' : isList ? 'list-item' : format,
-  };
-  Transforms.setNodes(editor, newProperties);
-
-  if (!isActive && isList) {
-    const block = { type: format, children: [] };
-    Transforms.wrapNodes(editor, block);
+const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
+  if (!editor) {
+    return null;
   }
-};
-
-const toggleMark = (editor, format) => {
-  const isActive = isMarkActive(editor, format);
-  if (isActive) {
-    Editor.removeMark(editor, format);
-  } else {
-    Editor.addMark(editor, format, true);
-  }
-};
-
-const Toolbar: React.FC = () => {
-  const editor = useSlate();
 
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', p: 0.5, borderBottom: 1, borderColor: 'divider' }}>
       <ToggleButtonGroup size="small">
         <ToggleButton
           value="bold"
-          selected={isMarkActive(editor, 'bold')}
-          onClick={() => toggleMark(editor, 'bold')}
+          selected={editor.isActive('bold')}
+          onClick={() => editor.chain().focus().toggleBold().run()}
         >
           <Tooltip title="太字">
             <FormatBoldIcon fontSize="small" />
@@ -208,8 +143,8 @@ const Toolbar: React.FC = () => {
         </ToggleButton>
         <ToggleButton
           value="italic"
-          selected={isMarkActive(editor, 'italic')}
-          onClick={() => toggleMark(editor, 'italic')}
+          selected={editor.isActive('italic')}
+          onClick={() => editor.chain().focus().toggleItalic().run()}
         >
           <Tooltip title="斜体">
             <FormatItalicIcon fontSize="small" />
@@ -217,8 +152,8 @@ const Toolbar: React.FC = () => {
         </ToggleButton>
         <ToggleButton
           value="underline"
-          selected={isMarkActive(editor, 'underline')}
-          onClick={() => toggleMark(editor, 'underline')}
+          selected={editor.isActive('underline')}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
         >
           <Tooltip title="下線">
             <FormatUnderlinedIcon fontSize="small" />
@@ -226,8 +161,8 @@ const Toolbar: React.FC = () => {
         </ToggleButton>
         <ToggleButton
           value="code"
-          selected={isMarkActive(editor, 'code')}
-          onClick={() => toggleMark(editor, 'code')}
+          selected={editor.isActive('code')}
+          onClick={() => editor.chain().focus().toggleCode().run()}
         >
           <Tooltip title="コード">
             <CodeIcon fontSize="small" />
@@ -239,27 +174,27 @@ const Toolbar: React.FC = () => {
 
       <ToggleButtonGroup size="small">
         <ToggleButton
-          value="heading-one"
-          selected={isBlockActive(editor, 'heading-one')}
-          onClick={() => toggleBlock(editor, 'heading-one')}
+          value="heading-1"
+          selected={editor.isActive('heading', { level: 1 })}
+          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
         >
           <Tooltip title="見出し1">
             <LooksOneIcon fontSize="small" />
           </Tooltip>
         </ToggleButton>
         <ToggleButton
-          value="heading-two"
-          selected={isBlockActive(editor, 'heading-two')}
-          onClick={() => toggleBlock(editor, 'heading-two')}
+          value="heading-2"
+          selected={editor.isActive('heading', { level: 2 })}
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
         >
           <Tooltip title="見出し2">
             <LooksTwoIcon fontSize="small" />
           </Tooltip>
         </ToggleButton>
         <ToggleButton
-          value="heading-three"
-          selected={isBlockActive(editor, 'heading-three')}
-          onClick={() => toggleBlock(editor, 'heading-three')}
+          value="heading-3"
+          selected={editor.isActive('heading', { level: 3 })}
+          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
         >
           <Tooltip title="見出し3">
             <Looks3Icon fontSize="small" />
@@ -271,27 +206,27 @@ const Toolbar: React.FC = () => {
 
       <ToggleButtonGroup size="small">
         <ToggleButton
-          value="block-quote"
-          selected={isBlockActive(editor, 'block-quote')}
-          onClick={() => toggleBlock(editor, 'block-quote')}
+          value="blockquote"
+          selected={editor.isActive('blockquote')}
+          onClick={() => editor.chain().focus().toggleBlockquote().run()}
         >
           <Tooltip title="引用">
             <FormatQuoteIcon fontSize="small" />
           </Tooltip>
         </ToggleButton>
         <ToggleButton
-          value="bulleted-list"
-          selected={isBlockActive(editor, 'bulleted-list')}
-          onClick={() => toggleBlock(editor, 'bulleted-list')}
+          value="bulletList"
+          selected={editor.isActive('bulletList')}
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
         >
           <Tooltip title="箇条書き">
             <FormatListBulletedIcon fontSize="small" />
           </Tooltip>
         </ToggleButton>
         <ToggleButton
-          value="numbered-list"
-          selected={isBlockActive(editor, 'numbered-list')}
-          onClick={() => toggleBlock(editor, 'numbered-list')}
+          value="orderedList"
+          selected={editor.isActive('orderedList')}
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
         >
           <Tooltip title="番号付きリスト">
             <FormatListNumberedIcon fontSize="small" />
@@ -309,77 +244,78 @@ export default Toolbar;
 
 ```typescript
 // src/renderer/components/Editor/index.tsx
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Paper } from '@mui/material';
-import { createEditor, Descendant } from 'slate';
-import { Slate, withReact } from 'slate-react';
-import { withHistory } from 'slate-history';
-import SlateEditor from './SlateEditor';
+import TipTapEditor from './TipTapEditor';
 import Toolbar from './Toolbar';
+import { useEditor } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import Image from '@tiptap/extension-image';
+import Link from '@tiptap/extension-link';
 import { useNoteStore } from '../../store/noteStore';
 import { NoteService } from '../../services/NoteService';
 import { useSettingsStore } from '../../store/settingsStore';
 
-// 初期値
-const initialValue: Descendant[] = [
-  {
-    type: 'paragraph',
-    children: [{ text: '' }],
-  },
-];
-
 const Editor: React.FC = () => {
   const { selectedNoteId, notes, updateNote } = useNoteStore();
   const { autoSave } = useSettingsStore();
-  const [value, setValue] = useState<Descendant[]>(initialValue);
-  const [lastSavedValue, setLastSavedValue] = useState<string>('');
+  const [content, setContent] = useState<string>('');
+  const [lastSavedContent, setLastSavedContent] = useState<string>('');
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'ノートを入力してください...',
+      }),
+      Image,
+      Link.configure({
+        openOnClick: true,
+      }),
+    ],
+    content,
+    onUpdate: ({ editor }) => {
+      setContent(editor.getHTML());
+    },
+  });
 
   // 選択されたノートが変更されたときにエディタの内容を更新
   useEffect(() => {
     if (selectedNoteId) {
       const selectedNote = notes.find(note => note.id === selectedNoteId);
       if (selectedNote) {
-        try {
-          // ノートの内容がJSON形式の場合はパース
-          const content = selectedNote.content ? JSON.parse(selectedNote.content) : initialValue;
-          setValue(content);
-          setLastSavedValue(JSON.stringify(content));
-        } catch (e) {
-          // パースに失敗した場合はテキストとして扱う
-          setValue([
-            {
-              type: 'paragraph',
-              children: [{ text: selectedNote.content || '' }],
-            },
-          ]);
-          setLastSavedValue(selectedNote.content || '');
+        setContent(selectedNote.content || '');
+        setLastSavedContent(selectedNote.content || '');
+        if (editor) {
+          editor.commands.setContent(selectedNote.content || '');
         }
       }
     } else {
-      setValue(initialValue);
-      setLastSavedValue('');
+      setContent('');
+      setLastSavedContent('');
+      if (editor) {
+        editor.commands.setContent('');
+      }
     }
-  }, [selectedNoteId, notes]);
+  }, [selectedNoteId, notes, editor]);
 
   // 自動保存
   useEffect(() => {
     if (!autoSave || !selectedNoteId) return;
 
-    const currentValueString = JSON.stringify(value);
-    if (currentValueString !== lastSavedValue) {
+    if (content !== lastSavedContent) {
       const timeoutId = setTimeout(() => {
-        saveNote(value);
+        saveNote(content);
       }, 1000);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [value, lastSavedValue, selectedNoteId, autoSave]);
+  }, [content, lastSavedContent, selectedNoteId, autoSave]);
 
   // ノートを保存
-  const saveNote = async (noteValue: Descendant[]) => {
+  const saveNote = async (noteContent: string) => {
     if (!selectedNoteId) return;
-
-    const noteContent = JSON.stringify(noteValue);
     
     try {
       const updatedNote = await NoteService.updateNote(selectedNoteId, {
@@ -388,31 +324,24 @@ const Editor: React.FC = () => {
       
       if (updatedNote) {
         updateNote(selectedNoteId, updatedNote);
-        setLastSavedValue(noteContent);
+        setLastSavedContent(noteContent);
       }
     } catch (error) {
       console.error('Failed to save note:', error);
     }
   };
 
-  // エディタの内容が変更されたときに呼ばれる
-  const handleChange = (newValue: Descendant[]) => {
-    setValue(newValue);
-  };
-
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Paper elevation={0} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <Slate editor={createEditor()} value={value} onChange={handleChange}>
-          <Toolbar />
-          <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-            <SlateEditor
-              initialValue={value}
-              onChange={handleChange}
-              readOnly={!selectedNoteId}
-            />
-          </Box>
-        </Slate>
+        <Toolbar editor={editor} />
+        <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+          <TipTapEditor
+            content={content}
+            onChange={setContent}
+            readOnly={!selectedNoteId}
+          />
+        </Box>
       </Paper>
     </Box>
   );
@@ -426,76 +355,68 @@ export default Editor;
 1. マークダウン変換のためのパッケージをインストールします。
 
 ```bash
-npm install remark remark-parse remark-slate unified
+npm install markdown-it @tiptap/extension-markdown
 ```
 
 2. マークダウン変換ユーティリティを作成します。
 
 ```typescript
 // src/renderer/utils/markdownUtils.ts
-import { unified } from 'unified';
-import remarkParse from 'remark-parse';
-import remarkSlate from 'remark-slate';
-import { Descendant } from 'slate';
+import MarkdownIt from 'markdown-it';
 
-export const markdownToSlate = async (markdown: string): Promise<Descendant[]> => {
-  try {
-    const result = await unified()
-      .use(remarkParse)
-      .use(remarkSlate)
-      .process(markdown);
-    
-    return result.result as Descendant[];
-  } catch (error) {
-    console.error('Error converting markdown to slate:', error);
-    return [
-      {
-        type: 'paragraph',
-        children: [{ text: markdown }],
-      },
-    ];
-  }
+const md = new MarkdownIt({
+  html: true,
+  breaks: true,
+  linkify: true,
+});
+
+export const markdownToHtml = (markdown: string): string => {
+  return md.render(markdown);
 };
 
-export const slateToMarkdown = (nodes: Descendant[]): string => {
-  let markdown = '';
+export const htmlToMarkdown = (html: string): string => {
+  // 基本的なHTML→Markdown変換
+  // 実際のプロジェクトでは、より高度な変換ライブラリを使用することを検討してください
+  let markdown = html;
   
-  const processNode = (node: any) => {
-    if (node.text) {
-      let text = node.text;
-      if (node.bold) text = `**${text}**`;
-      if (node.italic) text = `*${text}*`;
-      if (node.code) text = `\`${text}\``;
-      return text;
-    }
-    
-    const children = node.children.map(processNode).join('');
-    
-    switch (node.type) {
-      case 'paragraph':
-        return `${children}\n\n`;
-      case 'heading-one':
-        return `# ${children}\n\n`;
-      case 'heading-two':
-        return `## ${children}\n\n`;
-      case 'heading-three':
-        return `### ${children}\n\n`;
-      case 'block-quote':
-        return `> ${children}\n\n`;
-      case 'bulleted-list':
-        return children;
-      case 'numbered-list':
-        return children;
-      case 'list-item':
-        return `- ${children}\n`;
-      default:
-        return children;
-    }
-  };
+  // 見出し
+  markdown = markdown.replace(/<h1>(.*?)<\/h1>/g, '# $1\n\n');
+  markdown = markdown.replace(/<h2>(.*?)<\/h2>/g, '## $1\n\n');
+  markdown = markdown.replace(/<h3>(.*?)<\/h3>/g, '### $1\n\n');
   
-  nodes.forEach(node => {
-    markdown += processNode(node);
+  // 段落
+  markdown = markdown.replace(/<p>(.*?)<\/p>/g, '$1\n\n');
+  
+  // 強調
+  markdown = markdown.replace(/<strong>(.*?)<\/strong>/g, '**$1**');
+  markdown = markdown.replace(/<em>(.*?)<\/em>/g, '*$1*');
+  
+  // リスト
+  markdown = markdown.replace(/<ul>(.*?)<\/ul>/gs, (match, p1) => {
+    return p1.replace(/<li>(.*?)<\/li>/g, '- $1\n');
   });
+  
+  markdown = markdown.replace(/<ol>(.*?)<\/ol>/gs, (match, p1) => {
+    let index = 1;
+    return p1.replace(/<li>(.*?)<\/li>/g, () => {
+      return `${index++}. $1\n`;
+    });
+  });
+  
+  // 引用
+  markdown = markdown.replace(/<blockquote>(.*?)<\/blockquote>/gs, '> $1\n\n');
+  
+  // コード
+  markdown = markdown.replace(/<code>(.*?)<\/code>/g, '`$1`');
+  
+  // リンク
+  markdown = markdown.replace(/<a href="(.*?)">(.*?)<\/a>/g, '[$2]($1)');
+  
+  // 画像
+  markdown = markdown.replace(/<img src="(.*?)" alt="(.*?)">/g, '![$2]($1)');
+  
+  // 余分なスペースを削除
+  markdown = markdown.replace(/\n\n\n+/g, '\n\n');
   
   return markdown.trim();
 };
@@ -511,7 +432,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useNoteStore } from '../../store/noteStore';
 import { NoteService } from '../../services/NoteService';
-import { markdownToSlate, slateToMarkdown } from '../../utils/markdownUtils';
+import { markdownToHtml, htmlToMarkdown } from '../../utils/markdownUtils';
 
 const MarkdownToolbar: React.FC = () => {
   const { selectedNoteId, notes, updateNote } = useNoteStore();
@@ -536,19 +457,7 @@ const MarkdownToolbar: React.FC = () => {
     if (!selectedNote) return;
     
     try {
-      let content: any;
-      try {
-        content = JSON.parse(selectedNote.content);
-      } catch (e) {
-        content = [
-          {
-            type: 'paragraph',
-            children: [{ text: selectedNote.content || '' }],
-          },
-        ];
-      }
-      
-      const markdown = slateToMarkdown(content);
+      const markdown = htmlToMarkdown(selectedNote.content || '');
       await NoteService.exportNoteAsMarkdown({
         ...selectedNote,
         content: markdown,
@@ -602,9 +511,12 @@ ipcMain.handle('notes:importMarkdown', async () => {
       const content = await FileUtils.readFile(filePath);
       const fileName = path.basename(filePath, '.md');
       
+      // Markdownをリッチテキストに変換
+      const htmlContent = markdownToHtml(content);
+      
       const note = noteRepository.create({
         title: fileName,
-        content,
+        content: htmlContent,
         tags: ['imported'],
       });
       
@@ -624,16 +536,17 @@ ipcMain.handle('notes:importMarkdown', async () => {
 1. Prism.jsをインストールします。
 
 ```bash
-npm install prismjs
+npm install prismjs lowlight @tiptap/extension-code-block-lowlight
 npm install -D @types/prismjs
 ```
 
-2. シンタックスハイライト用のコンポーネントを作成します。
+2. シンタックスハイライト用の拡張を作成します。
 
 ```typescript
-// src/renderer/components/Editor/CodeBlock.tsx
-import React, { useEffect, useRef } from 'react';
-import Prism from 'prismjs';
+// src/renderer/components/Editor/extensions/CodeBlockExtension.ts
+import { Extension } from '@tiptap/core';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { lowlight } from 'lowlight';
 import 'prismjs/themes/prism.css';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-typescript';
@@ -650,16 +563,14 @@ import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-sql';
-import { Box, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 
-interface CodeBlockProps {
-  attributes: any;
-  children: React.ReactNode;
-  element: any;
-  editor: any;
-}
+export const CodeBlockExtension = CodeBlockLowlight.configure({
+  lowlight,
+  defaultLanguage: 'javascript',
+});
 
-const LANGUAGES = [
+// 言語選択用のユーティリティ
+export const LANGUAGES = [
   { value: 'javascript', label: 'JavaScript' },
   { value: 'typescript', label: 'TypeScript' },
   { value: 'jsx', label: 'JSX' },
@@ -676,77 +587,17 @@ const LANGUAGES = [
   { value: 'bash', label: 'Bash' },
   { value: 'sql', label: 'SQL' },
 ];
-
-const CodeBlock: React.FC<CodeBlockProps> = ({ attributes, children, element, editor }) => {
-  const codeRef = useRef<HTMLPreElement>(null);
-  
-  useEffect(() => {
-    if (codeRef.current) {
-      Prism.highlightElement(codeRef.current);
-    }
-  }, [element.language, element.children]);
-  
-  const handleLanguageChange = (event: React.ChangeEvent<{ value: unknown }>) => {
-    const path = ReactEditor.findPath(editor, element);
-    Transforms.setNodes(
-      editor,
-      { language: event.target.value as string },
-      { at: path }
-    );
-  };
-  
-  return (
-    <Box sx={{ my: 2, position: 'relative' }}>
-      <FormControl variant="outlined" size="small" sx={{ position: 'absolute', top: 0, right: 0, width: 150, zIndex: 1 }}>
-        <InputLabel id="language-select-label">言語</InputLabel>
-        <Select
-          labelId="language-select-label"
-          value={element.language || 'javascript'}
-          onChange={handleLanguageChange}
-          label="言語"
-        >
-          {LANGUAGES.map((lang) => (
-            <MenuItem key={lang.value} value={lang.value}>
-              {lang.label}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-      <pre
-        {...attributes}
-        ref={codeRef}
-        className={`language-${element.language || 'javascript'}`}
-        style={{
-          backgroundColor: '#f5f5f5',
-          padding: '1rem',
-          borderRadius: '4px',
-          overflow: 'auto',
-        }}
-      >
-        <code>{children}</code>
-      </pre>
-    </Box>
-  );
-};
-
-export default CodeBlock;
 ```
 
 3. エディタにコードブロック機能を追加します。
 
 ```typescript
-// src/renderer/components/Editor/SlateEditor.tsx を更新
-// renderElement関数に以下を追加
-case 'code-block':
-  return (
-    <CodeBlock
-      attributes={attributes}
-      element={element}
-      editor={editor}
-    >
-      {children}
-    </CodeBlock>
-  );
+// src/renderer/components/Editor/TipTapEditor.tsx を更新
+// importに以下を追加
+import { CodeBlockExtension } from './extensions/CodeBlockExtension';
+
+// extensionsに以下を追加
+CodeBlockExtension,
 ```
 
 4. ツールバーにコードブロックボタンを追加します。
@@ -754,132 +605,60 @@ case 'code-block':
 ```typescript
 // src/renderer/components/Editor/Toolbar.tsx に追加
 import CodeBlockIcon from '@mui/icons-material/Code';
+import { LANGUAGES } from './extensions/CodeBlockExtension';
+import { Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 
 // ToggleButtonGroupに追加
 <ToggleButton
-  value="code-block"
-  selected={isBlockActive(editor, 'code-block')}
-  onClick={() => toggleBlock(editor, 'code-block')}
+  value="codeBlock"
+  selected={editor.isActive('codeBlock')}
+  onClick={() => editor.chain().focus().toggleCodeBlock().run()}
 >
   <Tooltip title="コードブロック">
     <CodeBlockIcon fontSize="small" />
   </Tooltip>
 </ToggleButton>
+
+// 言語選択コンポーネント（エディタがコードブロックの中にいる場合のみ表示）
+{editor.isActive('codeBlock') && (
+  <FormControl variant="outlined" size="small" sx={{ ml: 2, minWidth: 120 }}>
+    <InputLabel id="language-select-label">言語</InputLabel>
+    <Select
+      labelId="language-select-label"
+      value={editor.getAttributes('codeBlock').language || 'javascript'}
+      onChange={(e) => {
+        editor
+          .chain()
+          .focus()
+          .updateAttributes('codeBlock', { language: e.target.value })
+          .run();
+      }}
+      label="言語"
+    >
+      {LANGUAGES.map((lang) => (
+        <MenuItem key={lang.value} value={lang.value}>
+          {lang.label}
+        </MenuItem>
+      ))}
+    </Select>
+  </FormControl>
+)}
 ```
 
 ### 4. 画像の挿入と管理
 
-1. 画像挿入用のコンポーネントを作成します。
-
-```typescript
-// src/renderer/components/Editor/ImageElement.tsx
-import React from 'react';
-import { Box, IconButton } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import { Transforms } from 'slate';
-import { ReactEditor } from 'slate-react';
-
-interface ImageElementProps {
-  attributes: any;
-  children: React.ReactNode;
-  element: any;
-  editor: any;
-}
-
-const ImageElement: React.FC<ImageElementProps> = ({ attributes, children, element, editor }) => {
-  const handleDelete = () => {
-    const path = ReactEditor.findPath(editor, element);
-    Transforms.removeNodes(editor, { at: path });
-  };
-  
-  return (
-    <Box
-      {...attributes}
-      contentEditable={false}
-      sx={{
-        position: 'relative',
-        display: 'flex',
-        justifyContent: 'center',
-        my: 2,
-        '&:hover .image-actions': {
-          opacity: 1,
-        },
-      }}
-    >
-      <Box
-        className="image-actions"
-        sx={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          opacity: 0,
-          transition: 'opacity 0.2s',
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          borderRadius: '4px',
-        }}
-      >
-        <IconButton size="small" onClick={handleDelete} sx={{ color: 'white' }}>
-          <DeleteIcon fontSize="small" />
-        </IconButton>
-      </Box>
-      <img
-        src={element.url}
-        alt={element.alt || ''}
-        style={{
-          maxWidth: '100%',
-          maxHeight: '500px',
-          objectFit: 'contain',
-        }}
-      />
-      {children}
-    </Box>
-  );
-};
-
-export default ImageElement;
-```
-
-2. 画像挿入機能をエディタに追加します。
-
-```typescript
-// src/renderer/components/Editor/SlateEditor.tsx を更新
-// renderElement関数に以下を追加
-case 'image':
-  return (
-    <ImageElement
-      attributes={attributes}
-      element={element}
-      editor={editor}
-    >
-      {children}
-    </ImageElement>
-  );
-```
-
-3. 画像挿入ボタンをツールバーに追加します。
+1. 画像挿入用のボタンをツールバーに追加します。
 
 ```typescript
 // src/renderer/components/Editor/Toolbar.tsx に追加
 import ImageIcon from '@mui/icons-material/Image';
-import { ReactEditor } from 'slate-react';
-
-// 画像挿入関数
-const insertImage = (editor, url, alt = '') => {
-  const image = {
-    type: 'image',
-    url,
-    alt,
-    children: [{ text: '' }],
-  };
-  Transforms.insertNodes(editor, image);
-};
 
 // ファイル選択ハンドラー
-const handleImageUpload = async (editor) => {
+const handleImageUpload = async () => {
   try {
     const result = await window.ipcRenderer.invoke('notes:uploadImage');
     if (result && result.filePath) {
-      insertImage(editor, result.filePath, result.fileName);
+      editor.chain().focus().setImage({ src: result.filePath, alt: result.fileName }).run();
     }
   } catch (error) {
     console.error('Failed to upload image:', error);
@@ -887,14 +666,14 @@ const handleImageUpload = async (editor) => {
 };
 
 // ツールバーに追加
-<IconButton onClick={() => handleImageUpload(editor)}>
+<IconButton onClick={handleImageUpload}>
   <Tooltip title="画像を挿入">
     <ImageIcon fontSize="small" />
   </Tooltip>
 </IconButton>
 ```
 
-4. IPCハンドラーに画像アップロード機能を追加します。
+2. IPCハンドラーに画像アップロード機能を追加します。
 
 ```typescript
 // src/main/ipc/ipcHandlers.ts に追加
@@ -1119,10 +898,11 @@ export default Header;
 - エディタの実装は複雑になりがちなので、コンポーネントを適切に分割してください
 - パフォーマンスを考慮し、大きなノートでも快適に編集できるようにしてください
 - ユーザーエクスペリエンスを重視し、直感的な操作ができるようにしてください
+- **重要**: 作業を開始する前に、必ずプロジェクトの技術選定ドキュメント（`docs/technology.md`）や開発マイルストーンドキュメント（`docs/development-milestones.md`）を読み、正しい技術スタックと実装方針を理解してください。これにより、誤った技術選択や実装の不整合を防ぐことができます。
 - **重要**: 以下の2種類の記録を必ず `history/YYYY/MM/連番_概要.md` 形式でhistoryディレクトリに残してください：
   1. 実装内容と結果の記録
   2. ユーザーからの指示内容の記録
-  これらの記録は次の生成AIが文脈を理解するために不可欠です
+  これらの記録は次の生成AIが文脈を理解するために不可欠です。記録がないと、次の生成AIが前の作業内容を理解できず、誤った判断をする可能性があります。
 - 作業完了時には、historyファイルに次のマイルストーンの指示ファイルへのパスを記載してください
 - 次のマイルストーンの指示ファイルには、historyへの記録の重要性を必ず記載してください
 
