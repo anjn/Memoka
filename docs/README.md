@@ -4,8 +4,11 @@
 
 比較的複雑な実装になることが予想されるため、開発に関する情報はすべてドキュメント化し、生成AIが参照できるようにします。
 
+また、人間が生成AIへ行った指示の内容は`history/YYYY/MM`ディレクトリ以下に連番で記録するものとします。
+
 ## 概要
 
 - [コンセプト](docs/concept.md)
 - [技術選定](docs/technology.md)
+- [ロードマップ](docs/roadmap.md)
 - [アーキテクチャ](docs/architecture.md)
