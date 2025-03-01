@@ -4,41 +4,31 @@
  */
 
 import React, { ReactNode } from 'react';
-import { Box, CssBaseline, ThemeProvider, createTheme } from '@mui/material';
+import { Box } from '@mui/material';
+import { ThemeProvider } from './ThemeProvider';
 import Header from './Header';
 import Sidebar from './Sidebar';
+import { useSettingsStore } from '../store/settingsStore';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#2196f3',
-    },
-    secondary: {
-      main: '#f50057',
-    },
-  },
-});
-
 const Layout: React.FC<LayoutProps> = ({ children }) => {
+  const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
+
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <ThemeProvider>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <Header />
         <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
-          <Sidebar />
+          <Sidebar width={sidebarWidth} />
           <Box
             component="main"
             sx={{
               flexGrow: 1,
               p: 3,
               overflow: 'auto',
-              backgroundColor: (theme) => theme.palette.background.default,
             }}
           >
             {children}

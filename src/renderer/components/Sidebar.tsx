@@ -19,17 +19,19 @@ import NoteIcon from '@mui/icons-material/Note';
 import AddIcon from '@mui/icons-material/Add';
 import FolderIcon from '@mui/icons-material/Folder';
 
-const drawerWidth = 240;
+interface SidebarProps {
+  width: number;
+}
 
-const Sidebar: React.FC = () => {
+const Sidebar: React.FC<SidebarProps> = ({ width }) => {
   return (
     <Drawer
       variant="permanent"
       sx={{
-        width: drawerWidth,
+        width: width,
         flexShrink: 0,
         [`& .MuiDrawer-paper`]: {
-          width: drawerWidth,
+          width: width,
           boxSizing: 'border-box',
         },
       }}
